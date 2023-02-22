@@ -3,7 +3,7 @@
 use ggez::{
     event,
     glam::*,
-    graphics::{self, Color},
+    graphics::{self, Color, DrawParam},
     Context, GameResult,
 };
 
@@ -13,6 +13,7 @@ struct VerletObjects {
     pos: Vec<Vec2>,
     old_pos: Vec<Vec2>,
     accel: Vec<Vec2>,
+    link: Vec<(usize, usize, f32)>,
     count: usize,
 }
 
@@ -22,6 +23,7 @@ impl VerletObjects {
             pos: Vec::with_capacity(100),
             old_pos: Vec::with_capacity(100),
             accel: Vec::with_capacity(100),
+            link: Vec::with_capacity(100),
             count: 0
         }
     }
@@ -51,9 +53,27 @@ impl VerletObjects {
         self.count = self.count + 1;
     }
 
+    fn add_link(&mut self, p1: usize, p2: usize) {
+        let dist = self.pos[p1] - self.pos[p2];
+        self.link.push((p1, p2, dist.length()))
+    }
+
     fn apply_gravity(&mut self) {
         for i in 0..self.count {
             self.accel[i] += vec2(0., 1000.0);
+        }
+    }
+
+    fn solve_links(&mut self) {
+        for i in 0..self.link.len() {
+            let link = self.link[i];
+            let v = self.pos[link.0] - self.pos[link.1];
+            let dist = v.length();
+
+            let n = v / dist;
+            let delta = link.2 - dist;
+            self.pos[link.0] += 0.5 * delta * n;
+            self.pos[link.1] -= 0.5 * delta * n;
         }
     }
 
@@ -101,9 +121,13 @@ struct MainState {
 impl MainState {
     fn new(ctx: &mut Context) -> GameResult<MainState> {
         let mut verlet_state = VerletObjects::new();
-        verlet_state.add(vec2(550.0, 300.0));
-        verlet_state.add(vec2(350.0, 300.0));
-        verlet_state.add(vec2(420.0, 300.0));
+        verlet_state.add(vec2(300.0, 300.0)); // 0
+        verlet_state.add(vec2(400.0, 500.0)); // 1
+        verlet_state.add(vec2(500.0, 300.0)); // 2
+
+        verlet_state.add_link(0, 1);
+        verlet_state.add_link(0, 2);
+        verlet_state.add_link(1, 2);
 
          let circle_area = graphics::Mesh::new_circle(
             ctx,
@@ -141,6 +165,7 @@ impl event::EventHandler<ggez::GameError> for MainState {
             for i in 0..8 {
                 self.verlet_state.apply_gravity();
                 self.verlet_state.check_collisions(dt_substep);
+                self.verlet_state.solve_links();
                 self.verlet_state.apply_constraint();
                 self.verlet_state.update_positions(dt_substep);
             }
@@ -158,6 +183,28 @@ impl event::EventHandler<ggez::GameError> for MainState {
         canvas.draw(&self.circle, self.verlet_state.get(0));
         canvas.draw(&self.circle, self.verlet_state.get(1));
         canvas.draw(&self.circle, self.verlet_state.get(2));
+
+        let line = graphics::Mesh::new_line(
+            ctx,
+            &[self.verlet_state.get(0), self.verlet_state.get(1)],
+            2.,
+            Color::WHITE)?;
+
+        let line1 = graphics::Mesh::new_line(
+            ctx,
+            &[self.verlet_state.get(0), self.verlet_state.get(2)],
+            2.,
+            Color::WHITE)?;
+
+        let line2 = graphics::Mesh::new_line(
+            ctx,
+            &[self.verlet_state.get(1), self.verlet_state.get(2)],
+            2.,
+            Color::WHITE)?;
+        
+        canvas.draw(&line, DrawParam::default());
+        canvas.draw(&line1, DrawParam::default());
+        canvas.draw(&line2, DrawParam::default());
 
         canvas.finish(ctx)?;
 
